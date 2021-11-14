@@ -1,1 +1,1 @@
-# CoConv-CUDA
+# Unofficial CUDA implementation of CoConv
