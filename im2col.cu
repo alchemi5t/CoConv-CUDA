@@ -103,22 +103,25 @@ void col2imOnDevice(unsigned int n, float *matA, float *matAc, int radiusF, int 
          idx < n; 
          idx += blockDim.x * gridDim.x) 
     {
-        int m = (idx / C) / L;
-        int l = (idx / C) % L;
+        int m = (idx/C ) / L;
+        int l = (idx/C ) % L;
         int r = idx % C;
-    
+        
         // For each spatial position in output...
         if (m < M) {
-            int w = m + radiusF;
+            int w = m ;
             if (l < L) {
-                int h = l + radiusF;
+                int h = l;
                 // For each kernel weight...
-                for (int q = 0, oq = -1 * radiusF; oq <= radiusF; q++, oq++) {
-                    for (int p = 0, op = -1 * radiusF; op <= radiusF; p++, op++) {
+                for (int x = 0; x < K; x++) {
+		
+			h = l;
+                    for (int y = 0; y < K; y++) {
                         if (r < C) {
-                            matA[r + C * ((h + op) + H * (w + oq))] = matAc[(r + C * (p + K * q)) + countF * (l + L * m)]; 
-                        }
-                    }
+                           matA[(r*(H*W)+(w*W + h ))]  = matAc[(idx*K*K) + (x*K + y)]; 
+			h++;                        
+}
+                    }w++;
                 }
             }
         }
