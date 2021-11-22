@@ -29,6 +29,44 @@ const unsigned int H = 4, W = 4, C = 1, K = 2;
 // HOST FUNCTION
 // Takes matrix A [float *matA] and transforms it
 // into column representation [float *matAc]
+
+void flatten_kernel(float * canvas, float * weights, int k, int d, int c_rows){
+	int c_cols = k + (k-1)*(d-1);
+	itr = 0;
+	for(int dilation = 1; dilation<=d; dilation ++){
+		int cur_kernel_size = k + (k-1)*(dilation-1);
+		for(int kernel_id = 0; kernel_id <c_rows/4; kernel_id++){
+			for(int weight_id = 0; weight_id < k*k; elem++){
+				if((weight_id+1)%(k)==0){
+					for(int last_col_pads = 0; last_col_pads<(dilation-1)(c_cols) + (c_cols-cur_kernel_size);last_col_pads++ ){
+						canvas[itr] = 0;
+						itr++;
+					}
+				}
+				else{
+					canvas[itr] = weights[weight_id];
+					itr++;
+					for(int inner_cols = 0; inner_cols<(dilation-1);inner_cols++ ){
+						canvas[itr] = 0;
+						itr++;
+					}
+				
+				}
+		
+			}
+		}
+	
+	
+	
+	
+	
+	}
+	
+	
+	
+}
+
+
 void im2colOnHost(float *matA, float *matAc, int radiusF, int countF, int L, int M, int K, int C)
 {
     // For each spatial position in output...
