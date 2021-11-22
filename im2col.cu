@@ -36,7 +36,9 @@ void flatten_kernel(float * canvas, float * weights, int k, int d, int c_rows){
 	for(int dilation = 1; dilation<=d; dilation ++){
 		int cur_kernel_size = k + (k-1)*(dilation-1);
 		for(int kernel_id = 0; kernel_id <c_rows/4; kernel_id++){
-			for(int weight_id = 0; weight_id < k*k; elem++){
+			for(int weight_id = 0; weight_id < k*k*C; elem++){
+				canvas[itr] = weights[weight_id];
+				itr++;
 				if((weight_id+1)%(k)==0){
 					for(int last_col_pads = 0; last_col_pads<(dilation-1)(c_cols) + (c_cols-cur_kernel_size);last_col_pads++ ){
 						canvas[itr] = 0;
@@ -44,8 +46,7 @@ void flatten_kernel(float * canvas, float * weights, int k, int d, int c_rows){
 					}
 				}
 				else{
-					canvas[itr] = weights[weight_id];
-					itr++;
+					
 					for(int inner_cols = 0; inner_cols<(dilation-1);inner_cols++ ){
 						canvas[itr] = 0;
 						itr++;
