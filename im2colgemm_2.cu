@@ -34,7 +34,7 @@
     #define LOG(...) ;
 #endif
 
-const unsigned int H = 100, W = 100, C = 64, K = 3, maxDilation=4, C_out=4; 
+const unsigned int H = 100, W = 100, C = 300, K = 3, maxDilation=4, C_out=64; 
 
 #define TILE_WIDTH 32
 #define TILE_HEIGHT 32
@@ -195,7 +195,7 @@ const unsigned int H = 100, W = 100, C = 64, K = 3, maxDilation=4, C_out=4;
         cudaEventCreate(&stop2);
 
         //MATRIX MULTIPLICATION USING CUBLAS 
-/*        cudaEventRecord(start2);
+        cudaEventRecord(start2);
         cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, M_Arows, M_Bcols, M_Acols, &alpha, array_A_gpu, M_Arows, array_B_gpu, M_Brows, &beta, array_D_gpu, M_Arows);
         cudaEventRecord(stop2);
 
@@ -206,7 +206,7 @@ const unsigned int H = 100, W = 100, C = 64, K = 3, maxDilation=4, C_out=4;
         
         //copy to CPU MEMORY
         
-            HANDLE_ERROR(cudaMemcpy(array_D, array_D_gpu, M_Arows*M_Bcols*sizeof(float), cudaMemcpyDeviceToHost)); */
+            HANDLE_ERROR(cudaMemcpy(array_D, array_D_gpu, M_Arows*M_Bcols*sizeof(float), cudaMemcpyDeviceToHost)); 
 //copy result of multiplication using CUBLAS from gpu to cpu
 
         //CALCULATING MEAN SQUARED ERROR IN BOTH METHODS OF MATRIX MULTIPLICATION
@@ -232,7 +232,13 @@ float* flatten_kernel(float * weights, int k, int d, int c_rows){
     for(int dilation = 1; dilation<=d; dilation++){
     int cur_kernel_size = k + (k-1)*(dilation-1);
     for(int kernel_id = 0; kernel_id < c_rows/4; kernel_id++){
+
+
+
+	
     	itr =    k_id*c_cols*C + (d-dilation)* pow(c_cols,0.5) + (d - dilation);
+
+	cout<< itr <<"  itr after 1 filter!!!!!!!!!!"<<k<<" k "<<C<<" c \n";
     for(int weight_id = 0; weight_id < k*k*C; weight_id++){
     canvas[itr] = weights[k_id*k*k*C + weight_id];
    /* cout<< weights[k_id*k*k+weight_id]<<" WEIGHTS"<<endl;
@@ -240,10 +246,11 @@ float* flatten_kernel(float * weights, int k, int d, int c_rows){
     cout<<k_id*k*k*C + weight_id<<"    index    "<<endl;
     cout<<canvas[itr]<<" CANVAS "<<itr <<endl;*/
     itr++;
-//cout<<"weight id ************************ === "<<weight_id<<endl;	
+//cout<<"weight id ************************ === "<<weight_id<< "        itr =  "<<itr<<endl;	
 if((weight_id+1)%(k*k)==0){
-                itr=  (dilation-1)*(c_rows/4)*c_cols*C +  ((weight_id+1)/(k*k))*c_cols + (d-dilation)* pow(c_cols,0.5) + (d - dilation);
-//                cout<<itr<<"************"<<weight_id<<endl;
+                itr= kernel_id*c_cols*C  + (dilation-1)*(c_rows/4)*c_cols*C +  ((weight_id+1)/(k*k))*c_cols + (d-dilation)* pow(c_cols,0.5) + (d - dilation);
+//if(dilation == 1 || dilation == 2)                
+//cout<<" jump idx" <<kernel_id*c_cols*C  +  (dilation-1)*(c_rows/4)*c_cols*C +  ((weight_id+1)/(k*k))*c_cols<<"  +++++++++++##########weight id#######++++++++  "<<weight_id<< "    offset itr "<< itr <<endl;
 continue; 
        }	
     if(((k_id*k*k*C + weight_id)+1)%(k)==0){
@@ -279,7 +286,8 @@ continue;
 				printf("\n\n");
 			}
 		}
-	}*/
+	}
+*/
     float *canvas_col=(float*)calloc(C*c_rows*c_cols,sizeof(float));
     itr=0;
     for(int i=0; i<C*c_cols;i++){
@@ -368,6 +376,26 @@ for(int c=0; c<C; c++) {
 }
 
 
+
+float round6(float var)
+{
+    // we use array of chars to store number
+    // as a string.
+    char str[40];
+ 
+    // Print in string the value of var
+    // with two decimal point
+    sprintf(str, "%.6f", var);
+ 
+    // scan string value in var
+    sscanf(str, "%f", &var);
+ 
+    return var;
+}
+ 
+
+
+
 void program(unsigned int blockSize, unsigned int gridSize = 0)
 {
     // CONSTS AND VARIABLES
@@ -412,7 +440,7 @@ void program(unsigned int blockSize, unsigned int gridSize = 0)
     //LOG("[i] PADDED INPUT PARAMS: %u height, %u width \n", paddedH, paddedW);
     
     char * fileName = (char*) malloc(13 * sizeof(char));
-    sprintf(fileName, "input5.txt");
+    sprintf(fileName, "input");
     
     float *matInput=paddingFile(maxDilation, fileName);
 /*for(int c=0; c<C; c++){
@@ -463,7 +491,7 @@ void program(unsigned int blockSize, unsigned int gridSize = 0)
 
 //GEMM
 ifstream infile;
-infile.open("weights5.txt");
+infile.open("weights");
 float *matFlatten = (float *)malloc(sizeF*C_out);
 printf("KERNEL SIZE %d\n", countF);
 for (int i = 0; i < countF*C_out; i++) {
@@ -511,7 +539,7 @@ int idx=i*C_out  + (c);
 	fprintf(fp, "%f\n", res_gemm[idx]);
 	float o=0.0;
 	output >> o;
-	mse += (o-res_gemm[idx])*(o-res_gemm[idx]);
+	mse += (round6(o)-res_gemm[idx])*(round6(o)-res_gemm[idx]);
   //      if((spaces)%L == 0)
     //     	printf("\n");
     }
