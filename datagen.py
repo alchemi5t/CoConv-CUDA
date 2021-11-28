@@ -1,3 +1,13 @@
+import torch
+import random
+import numpy as np
+import torch.nn as nn
+import time
+import sys
+np.random.seed(42069)
+random.seed(42069)
+torch.manual_seed(42069)
+
 inp_h = int(sys.argv[1])
 inp_w = int(sys.argv[2])
 inp_c = int(sys.argv[3])
