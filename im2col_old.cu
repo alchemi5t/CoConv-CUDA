@@ -12,8 +12,6 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <cublas_v2.h>
-#include <unistd.h>
-#include <string.h>
 // Feature maps dimensionality descriptions and assumptions:
 //             : Height          : Width           : Channels  : Number                    :
 // INPUT   / A | H               | W               | C         | ------------------------- |  
@@ -34,10 +32,11 @@
     #define LOG(...) ;
 #endif
 
-const unsigned int H = 16, W = 16, C = 100, K = 3, maxDilation=4, C_out=80; 
+const unsigned int H = 4, W = 4, C = 1, K = 3; 
+
 
 #define TILE_WIDTH 32
-#define TILE_HEIGHT 32
+    #define TILE_HEIGHT 32
     
     //Namespace for std
     using namespace std;
@@ -110,7 +109,7 @@ const unsigned int H = 16, W = 16, C = 100, K = 3, maxDilation=4, C_out=80;
             
     }
 
-    float* gemm(float *array_A, float *array_B, int M_Arows, int M_Acols, int M_Brows, int M_Bcols) {
+    void gemm(float *array_A, float *array_B, int M_Arows, int M_Acols, int M_Brows, int M_Bcols) {
 
         float* array_C=(float*)malloc(M_Arows*M_Bcols*sizeof(float));//array to store gpu result in column major format
         
@@ -175,7 +174,7 @@ const unsigned int H = 16, W = 16, C = 100, K = 3, maxDilation=4, C_out=80;
         float milliseconds1 = 0, milliseconds2 = 0;//storing the execution time in milliseconds
         
         cudaEventElapsedTime(&milliseconds1, start1, stop1);//get the time in milliseconds
-        cout<<"Time taken by GPU GEMM = "<<milliseconds1<<" ms"<<endl;//printing time taken by GPU
+        cout<<"Time taken by GPU = "<<milliseconds1<<" ms"<<endl;//printing time taken by GPU
 
         //copy to CPU MEMORY
         HANDLE_ERROR(cudaMemcpy(array_C, array_C_gpu, M_Arows*M_Bcols*sizeof(float), cudaMemcpyDeviceToHost));//copying result of multiplication from gpu to cpu
@@ -206,148 +205,81 @@ const unsigned int H = 16, W = 16, C = 100, K = 3, maxDilation=4, C_out=80;
         
         //copy to CPU MEMORY
         
-            HANDLE_ERROR(cudaMemcpy(array_D, array_D_gpu, M_Arows*M_Bcols*sizeof(float), cudaMemcpyDeviceToHost)); 
-//copy result of multiplication using CUBLAS from gpu to cpu
+            HANDLE_ERROR(cudaMemcpy(array_D, array_D_gpu, M_Arows*M_Bcols*sizeof(float), cudaMemcpyDeviceToHost));//copy result of multiplication using CUBLAS from gpu to cpu
 
         //CALCULATING MEAN SQUARED ERROR IN BOTH METHODS OF MATRIX MULTIPLICATION
         float mse=0; //mean squared error;
 
-     /*   for(int i=0; i<M_Arows*M_Bcols;i++) {
+        for(int i=0; i<M_Arows*M_Bcols;i++) {
             mse=mse+(array_C[i]-array_D[i])*(array_C[i]-array_D[i]);//calculating element by element
-           // printf("%.3f ", array_C[i]);
+            printf("%.3f ", array_C[i]);
         }
         mse=mse/(M_Arows*M_Bcols);  //taking the mean of squared error
             
-        cout<<endl<<"Mean square error = "<<mse<<endl;//printing out the mean squared error*/
-	return array_C;
+        cout<<endl<<"Mean square error = "<<mse<<endl;//printing out the mean squared error
+
 
     }
-float* matrix_mult(float* array1, unsigned int rows1, unsigned int cols1, float* array2, unsigned int rows2, unsigned int cols2)
+
+
+
+
+// HOST FUNCTION
+// Takes matrix A [float *matA] and transforms it
+// into column representation [float *matAc]
+void im2colOnHost(float *matA, float *matAc, int radiusF, int countF, int L, int M, int K, int C)
 {
-	float* C=(float*)malloc(rows1*cols2*sizeof(float));
-	
-	//initailize the array to zero
-	for(int idx=0; idx<rows1*cols2;idx++)
-	{
-		C[idx]=0;
-		int c=(int)(idx/rows1);
-		int r=idx%rows1;
+    // For each spatial position in output...
+    for (int m = 0; m < M; m++) {
+        int w = m + radiusF;
+        for (int l = 0; l < L; l++) {
+            int h = l + radiusF;
 
-		for(int k=0;k<rows2;k++)
-		{
-			C[idx]+=array1[rows1*k+r]*array2[rows2*c+k];
-		}
+            // Progress..
+            LOG("\r[i] Calculation on CPU %3d%%...", ((m * L + l) * 100 / (M * L)));
 
-	}	
-	
-	return C;
-
+            // For each kernel weight...
+            for (int q = 0, oq = -1 * radiusF; oq <= radiusF; q++, oq++) {
+                for (int p = 0, op = -1 * radiusF; op <= radiusF; p++, op++) {
+                    for (int r = 0; r < C; r++) {
+                        matAc[(r + C * (p + K * q)) + countF * (l + L * m)] = matA[r + C * ((h + op) + H * (w + oq))]; 
+                        LOG("matAc[%3d x %3d] <- matA[%3d x %3d x %3d]\n", (r + C * (p + K* q)), (l + L * m), (h + op), (w + oq), r);
+                    }
+                }
+            }
+        }
+    }
+    LOG("\n");
 }
-
-
-float* flatten_kernel(float * weights, int k, int d, int c_rows){
-    int c_cols = (k + (k-1)*(d-1))*(k + (k-1)*(d-1));
-    float *canvas=(float*)calloc(C*c_rows*c_cols,sizeof(float));
-    int itr = 0;
-    int k_id = 0;
-    for(int dilation = 1; dilation<=d; dilation++){
-    int cur_kernel_size = k + (k-1)*(dilation-1);
-    for(int kernel_id = 0; kernel_id < c_rows/4; kernel_id++){
-
-
-
-	
-    	itr =    k_id*c_cols*C + (d-dilation)* pow(c_cols,0.5) + (d - dilation);
-
-	//cout<< itr <<"  itr after 1 filter!!!!!!!!!!"<<k<<" k "<<C<<" c \n";
-    for(int weight_id = 0; weight_id < k*k*C; weight_id++){
-    canvas[itr] = weights[k_id*k*k*C + weight_id];
-   /* cout<< weights[k_id*k*k+weight_id]<<" WEIGHTS"<<endl;
-    cout<<"  k_id  "<<k_id<<endl;
-    cout<<k_id*k*k*C + weight_id<<"    index    "<<endl;
-    cout<<canvas[itr]<<" CANVAS "<<itr <<endl;*/
-    itr++;
-//cout<<"weight id ************************ === "<<weight_id<< "        itr =  "<<itr<<endl;	
-if((weight_id+1)%(k*k)==0){
-                itr= kernel_id*c_cols*C  + (dilation-1)*(c_rows/4)*c_cols*C +  ((weight_id+1)/(k*k))*c_cols + (d-dilation)* pow(c_cols,0.5) + (d - dilation);
-//if(dilation == 1 || dilation == 2)                
-//cout<<" jump idx" <<kernel_id*c_cols*C  +  (dilation-1)*(c_rows/4)*c_cols*C +  ((weight_id+1)/(k*k))*c_cols<<"  +++++++++++##########weight id#######++++++++  "<<weight_id<< "    offset itr "<< itr <<endl;
-continue; 
-       }	
-    if(((k_id*k*k*C + weight_id)+1)%(k)==0){
-    	for(int last_col_pads = 0; last_col_pads<(dilation-1)*(pow(c_cols,0.5)) + (pow(c_cols,0.5)-(cur_kernel_size  ));last_col_pads++ ){
-    		//canvas[itr] = 0;
-    		//cout<<itr<< "TEST" <<endl;
-    		itr++;
-    	
-    	}
-    }
-    else{
-    	
-    	for(int inner_cols = 0; inner_cols<(dilation-1);inner_cols++ ){
-    		//canvas[itr] = 0;
-    		itr++;
-    	}
-	
-
-    }
-
-
-    }
-    k_id++;
-    }
-    }
-
-/*	printf("\nROW MAJOR\n");
-	for(int i=0; i < c_rows; i++){
-		for(int j=0; j <C*c_cols; j++){
-			int idx=(i*C*c_cols)+j;
-			printf("%f ",canvas[idx]);
-			if((idx+1)%(C*c_cols)==0){
-				printf("\n\n");
-			}
-		}
-	}
-*/
-    float *canvas_col=(float*)calloc(C*c_rows*c_cols,sizeof(float));
-    itr=0;
-    for(int i=0; i<C*c_cols;i++){
-    for(int j=0; j < c_rows; j++) {
-    canvas_col[itr]=canvas[(j*c_cols*C)+i];
-    itr++;
-    }
-    }
-
-return canvas_col;
-	
-}
-void im2colOnHost(unsigned int n, float *matAc, float *matA, int H_, int W_, int L, int M, int K, int C)
+ 
+// DEVICE KERNEL
+// Takes matrix A [float *matA] and transforms it
+// into column representation [float *matAc] on GPU
+__global__ 
+void im2colOnDevice(unsigned int n, float *matAc, float *matA, int radiusF, int countF, int L, int M, int K, int C)
 {
-   // Using grid-stride loop if too big problem size.
+    // Using grid-stride loop if too big problem size.
     // https://devblogs.nvidia.com/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
-    for (int idx = 0;
-         idx < n;
-         idx += 1)
+    for (int idx = blockIdx.x * blockDim.x + threadIdx.x; 
+         idx < n; 
+         idx += blockDim.x * gridDim.x) 
     {
-        int m = (idx/C ) / L;
-        int l = (idx/C ) % L;
+        int m = (idx / C) / L;
+        int l = (idx / C) % L;
         int r = idx % C;
-
+        
         // For each spatial position in output...
         if (m < M) {
-            int w = m ;
+            int w = m + radiusF;
             if (l < L) {
-                int h = l;
+                int h = l + radiusF;
                 // For each kernel weight...
-                for (int x = 0; x < K; x++) {
-
-            h = l;
-                    for (int y = 0; y < K; y++) {
+                for (int q = 0, oq = -1 * radiusF; oq <= radiusF; q++, oq++) {
+                    for (int p = 0, op = -1 * radiusF; op <= radiusF; p++, op++) {
                         if (r < C) {
-                            matAc[((idx/C)*K*K*C)+(r*K*K) + (x*K + y)] = matA[(r*(H_*W_)) + w*W_ + h];
-            h++;
-}
-                    }w++;
+                            matAc[(r + C * (p + K * q)) + countF * (l + L * m)] = matA[r + C * ((h + op) + H * (w + oq))]; 
+                        }
+                    }
                 }
             }
         }
@@ -358,274 +290,176 @@ void im2colOnHost(unsigned int n, float *matAc, float *matA, int H_, int W_, int
 // Takes matrix A [float *matA] and transforms it
 // into column representation [float *matAc] on GPU
 __global__ 
-void im2colOnDevice(unsigned int n, float *matAc, float *matA, int H_, int W_, int L, int M, int K, int C)
+void col2imOnDevice(unsigned int n, float *matA, float *matAc, int radiusF, int countF, int L, int M, int K, int C)
 {
-   // Using grid-stride loop if too big problem size.
+    // Using grid-stride loop if too big problem size.
     // https://devblogs.nvidia.com/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    /*for (int idx = blockIdx.x * blockDim.x + threadIdx.x; 
+    for (int idx = blockIdx.x * blockDim.x + threadIdx.x; 
          idx < n; 
          idx += blockDim.x * gridDim.x) 
-    {*/
-        int m = (idx/C ) / L;
-        int l = (idx/C ) % L;
+    {
+        int m = (idx / C) / L;
+        int l = (idx / C) % L;
         int r = idx % C;
-        
+    
         // For each spatial position in output...
         if (m < M) {
-            int w = m ;
+            int w = m + radiusF;
             if (l < L) {
-                int h = l;
+                int h = l + radiusF;
                 // For each kernel weight...
-                for (int x = 0; x < K; x++) {
-        
-            h = l;
-                    for (int y = 0; y < K; y++) {
+                for (int q = 0, oq = -1 * radiusF; oq <= radiusF; q++, oq++) {
+                    for (int p = 0, op = -1 * radiusF; op <= radiusF; p++, op++) {
                         if (r < C) {
-                            matAc[((idx/C)*K*K*C)+(r*K*K) + (x*K + y)] = matA[(r*(H_*W_)) + w*W_ + h]; 
-            h++;                        
-}
-                    }w++;
+                            matA[r + C * ((h + op) + H * (w + oq))] = matAc[(r + C * (p + K * q)) + countF * (l + L * m)]; 
+                        }
+                    }
                 }
             }
         }
-    //}
-}
- 
-float* padding(unsigned int maxDilation, float* matInput) {
-    int newH=H+(2*maxDilation);
-    int newW=W+(2*maxDilation);
-    //const size_t size\ = newH*newW*sizeof(float);
-    float *paddedInput=(float *)calloc(newH*newW, sizeof(float));
-    for(int x=0; x<H;x++) {
-        for(int y=0; y<W;y++) {
-            paddedInput[((x+maxDilation)*newW)+y+maxDilation]=matInput[(x*W) + y];
-        }
-
-    }
-    return paddedInput;
-
-}
-
-float* paddingFile(unsigned int maxDilation, char * fileName) {
-    int newH=H+(2*maxDilation);
-    int newW=W+(2*maxDilation);
-
-    ifstream infile;
-    infile.open(fileName);
-
-    //const size_t size\ = newH*newW*sizeof(float);
-    float *paddedInput=(float *)calloc(newH*newW*C, sizeof(float));
-for(int c=0; c<C; c++) {
-    for(int x=0; x<H;x++) {
-        for(int y=0; y<W;y++) {
-           infile >>  paddedInput[(c*newH*newW) + (((x+maxDilation)*newW)+y+maxDilation)];
-        }
-
     }
 }
-    return paddedInput;
-
-}
-
-
-
-float round6(float var)
-{
-    // we use array of chars to store number
-    // as a string.
-    char str[40];
- 
-    // Print in string the value of var
-    // with two decimal point
-    sprintf(str, "%.6f", var);
- 
-    // scan string value in var
-    sscanf(str, "%f", &var);
- 
-    return var;
-}
- 
-
-
 
 void program(unsigned int blockSize, unsigned int gridSize = 0)
 {
     // CONSTS AND VARIABLES
+
     // Input/kernel/output counts and sizes
     const unsigned int countA = H*W*C;
     const size_t sizeA = countA*sizeof(float);
-//    LOG("[i] INPUT PARAMS: %u height, %u width, %u channels, %u elems, %u bytes\n", H, W, C, countA, sizeA);
+    LOG("[i] INPUT PARAMS: %u height, %u width, %u channels, %u elems, %u bytes\n", H, W, C, countA, sizeA);
 
+    const unsigned int radiusF = (K - 1) / 2;
     const unsigned int countF = K*K*C;
     const size_t sizeF = countF*sizeof(float);
-  //  LOG("[i] FILTER PARAMS: %u elems, %u bytes\n", countF, countF*sizeof(float));
- int paddedH=H+(2*maxDilation);
-    int paddedW=W+(2*maxDilation);    
-    const unsigned int L = H;
-    const unsigned int M = W;
-    const unsigned int KERNELS=L*M*C;	
-
-    //LOG("[i] OUTPUT PARAMS: %u height, %u width, %u channels\n", L, M, 1);
+    LOG("[i] FILTER PARAMS: %u radius, %u elems, %u bytes\n", radiusF, countF, countF*sizeof(float));
     
-    //dilated kernel size
-    int K_= K + (K-1)*(maxDilation-1);
-    const unsigned int countF_ = K_*K_*C;
+    const unsigned int L = H - (K - 1);
+    const unsigned int M = W - (K - 1);
+    LOG("[i] OUTPUT PARAMS: %u height, %u width, %u channels\n", L, M, 1);
+    
     const unsigned int countLR = L * M;
-    const unsigned int countAc = countF_ * countLR;
+    const unsigned int countAc = countF * countLR;
     const size_t sizeAc = countAc*sizeof(float);
-    //LOG("[i] INPUT IN COL PARAMS: %u elems, %u bytes\n", countAc, sizeAc);
-	
-    const unsigned int countKc = K_*K_*C*C_out;
+    LOG("[i] INPUT IN COL PARAMS: %u elems, %u bytes\n", countAc, sizeAc);
+
     
     // PREPARE DATA
 
     // Generate input data
     float *matA = (float *)malloc(sizeA);
-    //float matA[36] = {0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0,2.0,3.0,4.0,0.0,0.0,5.0,6.0,7.0,8.0,0.0,0.0,9.0,10.0,11.0,12.0,0.0,0.0,13.0,14.0,15.0,16.0,0.0};
-    //for (int i = 0; i < countA ; i++) {
-      //  matA[i] =(float)(i+1);
-    //printf("%.1f ",matA[i]);
-   // if((i+1)%W==0){
-    //printf("\n");}
-    //}
-    //printf("\n");	
-    //LOG("[i] PADDED INPUT PARAMS: %u height, %u width \n", paddedH, paddedW);
-    
-    char * fileName = (char*) malloc(13 * sizeof(char));
-    sprintf(fileName, "input");
-    
-    float *matInput=paddingFile(maxDilation, fileName);
-/*for(int c=0; c<C; c++){
-    for(int i=0; i<paddedH; i++) {
-        for(int j=0; j < paddedW; j++) {
-            int index=(c*paddedH*paddedW)+(j+(i*paddedW));
-            printf("%f ",matInput[index]);
-        if((index+1)%(paddedW)==0){
-        printf("\n");}
-        }
+    for (int i = 0; i < countA; i++) {
+        matA[i] =(float)(i+1);
+    printf("%.1f ",matA[i]);
+    if((i+1)%4==0){
+    printf("\n");}
     }
-    printf("\n\n");
-}*/
-   // LOG("  [!] FINISHED GENERATING INPUT\n");*/
+    LOG("  [!] FINISHED GENERATING INPUT\n");
+
+#ifdef FUNCTEST
+    // Calculate im2col result
+    float *matAc = (float *)malloc(sizeAc);
+    im2colOnHost(matA, matAc, radiusF, countF, L, M, K, C);
+    LOG("  [!] FINISHED CALCULATING im2col RESULT ON CPU\n");
+for (int i = 0; i < countAc; i++) {
+        printf("%.1f ",matAc[i]);
+        if((i+1)%9==0)
+{printf("\n");}
+    }
+#endif
+
+
     // Alloc memory and copy data to device
-
-ifstream infile;
-infile.open("weights");
-float *matFlatten = (float *)malloc(sizeF*C_out);
-printf("KERNEL SIZE %d\n", countF);
-for (int i = 0; i < countF*C_out; i++) {
-        infile>>matFlatten[i];
-//printf("%f ",matFlatten[i]);
-    }
-//printf("KERNEL MATRIIX \n");
-
-
-struct timeval start, end;
-gettimeofday(&start, NULL);
     float *devA, *devAc, *retAc;
-    const size_t sizeI = C*paddedW*paddedH*sizeof(float);
-    cudaMalloc((void**)&devA, sizeI); 
+    
+    cudaMalloc((void**)&devA, sizeA); 
     cudaMalloc((void**)&devAc, sizeAc); 
     retAc = (float *)malloc(sizeAc);
-	
-    cudaMemcpy(devA, matInput, sizeI, cudaMemcpyHostToDevice); 
+
+    cudaMemcpy(devA, matA, sizeA, cudaMemcpyHostToDevice); 
 
     // Compute default grid size if it wasn't passed
     const unsigned int KERNELS_NUM = L * M * C;
     if (gridSize == 0)
         gridSize = (KERNELS_NUM + blockSize - 1) / blockSize;
- 
- cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, 0);  
-   float thread_block=sqrt(prop.maxThreadsPerBlock);
-unsigned int GRID_SIZE = (KERNELS + thread_block - 1) / thread_block;
+    
     // Run im2col computation on device and copy results
     struct timeval t3, t4;
-    gettimeofday(&t3, NULL);
-//printf("\n KERNELS: %d\t H: %d\t W:%d\t L:%d\t M:%d\t K:%d\t C:%d\n",KERNELS, paddedH, paddedW, L, M, K_,C);
-    im2colOnDevice<<<GRID_SIZE, thread_block>>>(KERNELS, devAc, devA, paddedH, paddedW, L, M, K_ , C);
-	    gettimeofday(&t4, NULL);
-    LOG("  [!] FINISHED CALCULATING im2col ON DEVICE %.16fms\n",(t4.tv_usec-t3.tv_usec)/1000.0+(t4.tv_sec-t3.tv_sec)*1000.0);    
+gettimeofday(&t3, NULL);
+    im2colOnDevice<<<gridSize, blockSize>>>(KERNELS_NUM, devAc, devA, radiusF, countF, L, M, K, C);
+gettimeofday(&t4, NULL);
+    LOG("  [!] FINISHED CALCULATING im2col ON DEVICE %.16fms\n",(t4.tv_usec-t3.tv_usec)/1000.0+(t4.tv_sec-t3.tv_sec)*1000.0);
+    
     cudaMemcpy(retAc, devAc, sizeAc, cudaMemcpyDeviceToHost);
-
-//im2colOnHost(KERNELS, retAc, matInput, paddedH, paddedW, L, M, K_ , C);
-/*printf("\nIM2COL\n");
     for (int i = 0; i < countAc; i++) {
         printf("%.1f ",retAc[i]);
-        if((i+1)%K_ == 0)
-        printf("\n");
-            if((i+1)%(K_*K_*C)==0)
-        {printf("\n\n\n");}
-            }
-    printf("\n");*/
-
+    if((i+1)%9==0)
+{printf("\n");}
+    }
+printf("\n");
 
 //GEMM
-//float* array1, unsigned int rows1, unsigned int cols1, float* array2, unsigned int rows2, unsigned int cols2
-struct timeval flattens, flattene;
-    gettimeofday(&flattens, NULL);
-float* kernelMatrix=flatten_kernel(matFlatten,K, maxDilation, C_out);
-gettimeofday(&flattene, NULL);
- LOG("  [!] FINISHED CALCULATING Flatten ON DEVICE %.16fms\n",(flattene.tv_usec-flattens.tv_usec)/1000.0+(flattene.tv_sec-flattens.tv_sec)*1000.0);
-//printf("\n\n");
-//printf("KERNEL SIZE %d\n", countKc);
-/*for(int i=0; i<countKc;i++) {
-	printf("%f  ",kernelMatrix[i]);
-	if((i+1)%(K_*K_*C)==0)
-		printf("\n\n");
-
-}*/
-//printf("\n\n");
-
-//TODO: CHECK COUNTLR
-//float *res_gemm=matrix_mult(kernelMatrix, C_out, countF_, retAc, K_*K_*C, countLR);
-float *res_gemm = gemm(kernelMatrix, retAc, C_out, countF_, K_ *K_ *C, countLR);
-    gettimeofday(&t4, NULL);
-    LOG("  [!] FINISHED CALCULATING CoConv ON DEVICE %.16fms\n",(t4.tv_usec-t3.tv_usec)/1000.0+(t4.tv_sec-t3.tv_sec)*1000.0);
-//for(int i=0; i<C_out*countLR;i++) {
-  //  printf("%.3f ", res_gemm[i]);
-//}
-//printf("\n\n");
-ifstream output;
-output.open("op");
-float mse=0.0;
-gettimeofday(&end, NULL);
- LOG("  [!] FINISHED CALCULATING ON DEVICE %.16fms\n",(end.tv_usec-start.tv_usec)/1000.0+(end.tv_sec-start.tv_sec)*1000.0);
-char * fileN = (char*) malloc(13 * sizeof(char));
-    sprintf(fileN, "out.txt");
-    FILE * fp;
-    fp = fopen(fileN,"w");
-for(int c=0; c<C_out; c++){
-int spaces=0;
-int count=0;
-for (int i = 0; i < countLR; i++) {
-spaces++;
-int idx=i*C_out  + (c);
-
-float o =0.0;
-        output >> o;
-//        printf("gemm : %f, pytorch: %f, diff: %f \n", res_gemm[idx], o, o-res_gemm[idx]);
-        mse += (round6(o)-res_gemm[idx])*(round6(o)-res_gemm[idx]);
-        //printf("%f ",res_gemm[idx]);
-	fprintf(fp, "%f\n", res_gemm[idx]);
-  //      if((spaces)%L == 0)
-    //     	printf("\n");
+float *matF = (float *)malloc(sizeF);
+for (int i = 0; i < countF; i++) {
+        matF[i] =(float)(i+1);
     }
-//printf("\n");
-}
- fclose(fp);
-mse/=countLR*C_out;
-printf("\n MSE: %f", mse);
+gemm(retAc, matF, (L*M), (K*K*C), (K*K*C), 1);
+
+#ifdef FUNCTEST
+    // Compare results
+    int success = 1;
+    for (int i = 0; i < countAc; i++) {
+        if (retAc[i] != matAc[i]) {
+            success = 0;
+            printf("TEST FAILED: im2col device kernel...\n");
+            break;
+        }
+    }
+
+    if (success) {
+        printf("TEST PASSED: im2col device kernel!\n");
+    }
+#endif
+
+    // Allocate memory for return value
+    float *retA;
+    retA = (float *)malloc(sizeA);
+    cudaMemset(devA, 0, sizeA); 
+    
+    // Run col2im computation on device and copy results
+gettimeofday(&t3, NULL);    
+col2imOnDevice<<<gridSize, blockSize>>>(KERNELS_NUM, devA, devAc, radiusF, countF, L, M, K, C);
+gettimeofday(&t4, NULL);    
+LOG("  [!] FINISHED CALCULATING col2im ON DEVICE %.16fms\n",(t4.tv_usec-t3.tv_usec)/1000.0+(t4.tv_sec-t3.tv_sec)*1000.0);
+    
+    cudaMemcpy(retA, devA, sizeA, cudaMemcpyDeviceToHost);
+
+#ifdef FUNCTEST
+    // Compare results
+    success = 1;
+    for (int i = 0; i < countA; i++) {
+        if (retA[i] != matA[i]) {
+            success = 0;
+            printf("TEST FAILED: col2im device kernel...\n");
+            break;
+        }
+    }
+
+    if (success) {
+        printf("TEST PASSED: col2im device kernel!\n");
+    }
+#endif
+
     // CLEAN UP
     cudaFree(devA);
     cudaFree(devAc);
     
-    //free(matA);
-    free(matInput);
-    free(matFlatten);
+    free(matA);
+#ifdef FUNCTEST
+    free(matAc);
+#endif
+    free(retA);
     free(retAc);
-    free(res_gemm);
 }
 
 int main()
@@ -635,8 +469,8 @@ int main()
     unsigned int gridSize = 0;
 
     // Calculate max needed kernels/threads number
-    const unsigned int L = H;
-    const unsigned int M = W;
+    const unsigned int L = H - (K - 1);
+    const unsigned int M = W - (K - 1);
     const unsigned int KERNELS_NUM = L * M * C;
 
     // Prepare variables for time measurement
@@ -645,13 +479,13 @@ int main()
     int totalRuns = 1;
     
     // First warm-up run
-   // LOG("--------- WARM-UP ---------\n");
-    //program(256);
-    //LOG("--------- WARM-UP ---------\n\n");
+    LOG("--------- WARM-UP ---------\n");
+    program(256);
+    LOG("--------- WARM-UP ---------\n\n");
 
 #ifdef PERFTEST
     // Average over 10 runs
-    totalRuns = 1;
+    totalRuns = 10;
     
     // Open file for perf logs
     std::fstream fperflog("perflog.csv", std::ios::out);
@@ -662,7 +496,7 @@ int main()
         for (blockSize = 32; blockSize <= 34; blockSize *= 2) {
             const unsigned int MAX_GRID_SIZE = (KERNELS_NUM + blockSize - 1) / blockSize;
             LOG("  [!] For %d blocks, max grid size is %d\n", blockSize, MAX_GRID_SIZE);
-            for (gridSize = 1; gridSize <=1; gridSize *= 2) {
+            for (gridSize = 1; gridSize <= 1; gridSize *= 2) {
                 if (gridSize <= MAX_GRID_SIZE) {
                     totalTime = 0;
                     for (int i = 0; i < 1; i++)
@@ -671,7 +505,7 @@ int main()
                         // Start timer
                         gettimeofday(&t1, NULL);
                     
-                       // WORK HARD!
+                        // WORK HARD!
                         program(blockSize, gridSize);
                     
                         // Stop timer
@@ -700,7 +534,3 @@ int main()
 
     return EXIT_SUCCESS;
 }
-
-
-
-
