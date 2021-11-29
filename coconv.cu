@@ -280,6 +280,78 @@ float* flatten_kernel(float * weights, int k, int d, int c_rows) {
 	return canvas_col;
 
 }
+
+
+__global__ void flattenOnDevice(float * weights, float * canvas, int dilation, int c_rows, int c_cols, int d, int k_id, int k, int C, int kernel_id, int cur_kernel_size, int pow_c){
+	
+	int weight_id = blockIdx.x * blockDim.x + threadIdx.x;
+	weight_id = weight_id % (k*k*C);
+	int itr=((weight_id % k) * dilation) + (weight_id/k)*pow_c*dilation + (weight_id % k) + (weight_id/k)*k;
+	itr +=  kernel_id * c_cols * C  + (dilation - 1) * (c_rows / 4) * c_cols * C +  ((weight_id + 1) / (k * k)) * c_cols + (d - dilation) * pow_c + (d - dilation);
+	canvas[itr] = weights[k_id * k * k * C + weight_id];
+	/*if ((weight_id + 1) % (k * k) == 0) {
+		itr = kernel_id * c_cols * C  + (dilation - 1) * (c_rows / 4) * c_cols * C +  ((weight_id + 1) / (k * k)) * c_cols + (d - dilation) * pow(c_cols, 0.5) + (d - dilation);
+
+	}
+	elif (((k_id * k * k * C + weight_id) + 1) % (k) == 0) {
+		itr += (dilation - 1) * (pow(c_cols, 0.5)) + (pow(c_cols, 0.5) - (cur_kernel_size  ));
+		// for (int last_col_pads = 0; last_col_pads < (dilation - 1) * (pow(c_cols, 0.5)) + (pow(c_cols, 0.5) - (cur_kernel_size  )); last_col_pads++ ) {
+
+		// 	itr++;
+
+		// }
+	}
+	else {
+		itr = (dilation - 1);
+		// for (int inner_cols = 0; inner_cols < (dilation - 1); inner_cols++ ) {
+		// 	itr++;
+		// }
+
+
+	}*/
+
+
+}
+
+float* flatten_kernelOnDevice(float * weights, int k, int d, int c_rows) {
+	
+	int c_cols = (k + (k - 1) * (d - 1)) * (k + (k - 1) * (d - 1));
+	float *canvas = (float*)calloc(C * c_rows * c_cols, sizeof(float));
+	float *canvas_d, *weights_d;
+	const size_t sizeW = k * k * C * c_rows * sizeof(float);
+	const size_t sizeC = C * c_rows * c_cols * sizeof(float);
+	cudaMalloc((void**)&weights_d, sizeW);
+	cudaMalloc((void**)&canvas_d, sizeC);
+	cudaMemcpy(weights_d, weights, sizeW, cudaMemcpyHostToDevice);
+	float thread_block = 4.0;
+	int KERNELS = k*k*C;
+	unsigned int GRID_SIZE = (KERNELS + thread_block - 1) / thread_block;
+	int itr = 0;
+	int k_id = 0;
+	for (int dilation = 1; dilation <= d; dilation++) {
+		int cur_kernel_size = k + (k - 1) * (dilation - 1);
+		for (int kernel_id = 0; kernel_id < c_rows / 4; kernel_id++) {
+			itr = k_id * c_cols * C + (d - dilation) * pow(c_cols, 0.5) + (d - dilation);
+			flattenOnDevice <<< GRID_SIZE, thread_block>>>(weights_d,canvas_d,dilation,c_rows, c_cols, d,  k_id, k, C, kernel_id, cur_kernel_size, pow(c_cols, 0.5));
+			// for (int weight_id = 0; weight_id < k * k * C; weight_id++) {
+			// }
+			k_id++;
+		}
+	}
+	cudaMemcpy(canvas_d, canvas, sizeC, cudaMemcpyDeviceToHost);
+	float *canvas_col = (float*)calloc(C * c_rows * c_cols, sizeof(float));
+	itr = 0;
+	for (int i = 0; i < C * c_cols; i++) {
+		for (int j = 0; j < c_rows; j++) {
+			canvas_col[itr] = canvas[(j * c_cols * C) + i];
+			itr++;
+		}
+	}
+
+	return canvas_col;
+
+}
+
 void im2colOnHost(unsigned int n, float *matAc, float *matA, int H_, int W_, int L, int M, int K, int C)
 {
 // Using grid-stride loop if too big problem size.
@@ -463,7 +535,7 @@ void program(unsigned int blockSize = 0, unsigned int gridSize = 0)
 	
 	//GEMM
 	gettimeofday(&flattens, NULL);
-	float* kernelMatrix = flatten_kernel(matFlatten, K, maxDilation, C_out);
+	float* kernelMatrix = flatten_kernelOnDevice(matFlatten, K, maxDilation, C_out);
 	gettimeofday(&flattene, NULL);
  	LOG("  [!] FINISHED CALCULATING Flatten ON DEVICE %lfms\n",getTime(flattens,flattene));
 	float *res_gemm = gemm(kernelMatrix, devAc, C_out, countF_, K_ * K_ * C, countLR);
