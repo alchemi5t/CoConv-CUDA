@@ -34,7 +34,7 @@
     #define LOG(...) ;
 #endif
 
-unsigned int H = 16, W = 16, C = 100, K = 3, maxDilation=4, C_out=80; 
+unsigned int H, W, C = 100, K = 3, maxDilation=4, C_out=80; 
 
 #define TILE_WIDTH 32
 #define TILE_HEIGHT 32
@@ -455,18 +455,14 @@ void program(unsigned int blockSize, unsigned int gridSize = 0)
     // Input/kernel/output counts and sizes
     const unsigned int countA = H*W*C;
     const size_t sizeA = countA*sizeof(float);
-//    LOG("[i] INPUT PARAMS: %u height, %u width, %u channels, %u elems, %u bytes\n", H, W, C, countA, sizeA);
 
     const unsigned int countF = K*K*C;
     const size_t sizeF = countF*sizeof(float);
-  //  LOG("[i] FILTER PARAMS: %u elems, %u bytes\n", countF, countF*sizeof(float));
- int paddedH=H+(2*maxDilation);
+    int paddedH=H+(2*maxDilation);
     int paddedW=W+(2*maxDilation);    
     const unsigned int L = H;
     const unsigned int M = W;
     const unsigned int KERNELS=L*M*C;	
-
-    //LOG("[i] OUTPUT PARAMS: %u height, %u width, %u channels\n", L, M, 1);
     
     //dilated kernel size
     int K_= K + (K-1)*(maxDilation-1);
@@ -480,52 +476,26 @@ void program(unsigned int blockSize, unsigned int gridSize = 0)
     
     // PREPARE DATA
 
-    // Generate input data
-    float *matA = (float *)malloc(sizeA);
-    //float matA[36] = {0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0,2.0,3.0,4.0,0.0,0.0,5.0,6.0,7.0,8.0,0.0,0.0,9.0,10.0,11.0,12.0,0.0,0.0,13.0,14.0,15.0,16.0,0.0};
-    //for (int i = 0; i < countA ; i++) {
-      //  matA[i] =(float)(i+1);
-    //printf("%.1f ",matA[i]);
-   // if((i+1)%W==0){
-    //printf("\n");}
-    //}
-    //printf("\n");	
-    //LOG("[i] PADDED INPUT PARAMS: %u height, %u width \n", paddedH, paddedW);
     
     char * fileName = (char*) malloc(13 * sizeof(char));
     sprintf(fileName, "in_%d_%d_%d_%d", H, W, C, C_out);
     
     float *matInput=paddingFile(maxDilation, fileName);
-/*for(int c=0; c<C; c++){
-    for(int i=0; i<paddedH; i++) {
-        for(int j=0; j < paddedW; j++) {
-            int index=(c*paddedH*paddedW)+(j+(i*paddedW));
-            printf("%f ",matInput[index]);
-        if((index+1)%(paddedW)==0){
-        printf("\n");}
-        }
-    }
-    printf("\n\n");
-}*/
-   // LOG("  [!] FINISHED GENERATING INPUT\n");*/
     // Alloc memory and copy data to device
 
-ifstream infile;
-char * fileNameW = (char*) malloc(13 * sizeof(char));
-sprintf(fileNameW, "weights_%d_%d_%d_%d", H, W, C, C_out);
-infile.open(fileNameW);
-float *matFlatten = (float *)malloc(sizeF*C_out);
-printf("KERNEL SIZE %d\n", countF);
-for (int i = 0; i < countF*C_out; i++) {
-        infile>>matFlatten[i];
-//printf("%f ",matFlatten[i]);
-    }
-//printf("KERNEL MATRIIX \n");
+    ifstream infile;
+    char * fileNameW = (char*) malloc(13 * sizeof(char));
+    sprintf(fileNameW, "weights_%d_%d_%d_%d", H, W, C, C_out);
+    infile.open(fileNameW);
+    float *matFlatten = (float *)malloc(sizeF*C_out);
+    printf("KERNEL SIZE %d\n", countF);
+    for (int i = 0; i < countF*C_out; i++) {
+            infile>>matFlatten[i];
+        }
 
-
-struct timeval start, end;
-gettimeofday(&start, NULL);
-    float *devA, *devAc, *retAc;
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+    float *devA, *devAc, *retAc, *retCpu;
     const size_t sizeI = C*paddedW*paddedH*sizeof(float);
     cudaMalloc((void**)&devA, sizeI); 
     cudaMalloc((void**)&devAc, sizeAc); 
@@ -537,98 +507,77 @@ gettimeofday(&start, NULL);
     const unsigned int KERNELS_NUM = L * M * C;
     if (gridSize == 0)
         gridSize = (KERNELS_NUM + blockSize - 1) / blockSize;
- 
- cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, 0);  
-   float thread_block=sqrt(prop.maxThreadsPerBlock);
-unsigned int GRID_SIZE = (KERNELS + thread_block - 1) / thread_block;
-    // Run im2col computation on device and copy results
-    struct timeval t3, t4;
-    gettimeofday(&t3, NULL);
-//printf("\n KERNELS: %d\t H: %d\t W:%d\t L:%d\t M:%d\t K:%d\t C:%d\n",KERNELS, paddedH, paddedW, L, M, K_,C);
-    im2colOnDevice<<<GRID_SIZE, thread_block>>>(KERNELS, devAc, devA, paddedH, paddedW, L, M, K_ , C);
-	    gettimeofday(&t4, NULL);
-    LOG("  [!] FINISHED CALCULATING im2col ON DEVICE %.16fms\n",(t4.tv_usec-t3.tv_usec)/1000.0+(t4.tv_sec-t3.tv_sec)*1000.0);    
-    cudaMemcpy(retAc, devAc, sizeAc, cudaMemcpyDeviceToHost);
-
-//im2colOnHost(KERNELS, retAc, matInput, paddedH, paddedW, L, M, K_ , C);
-/*printf("\nIM2COL\n");
-    for (int i = 0; i < countAc; i++) {
-        printf("%.1f ",retAc[i]);
-        if((i+1)%K_ == 0)
-        printf("\n");
-            if((i+1)%(K_*K_*C)==0)
-        {printf("\n\n\n");}
-            }
-    printf("\n");*/
+     
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);  
+    float thread_block=sqrt(prop.maxThreadsPerBlock);
+    unsigned int GRID_SIZE = (KERNELS + thread_block - 1) / thread_block;
+        // Run im2col computation on device and copy results
+        struct timeval t3, t4;
+        gettimeofday(&t3, NULL);
+        im2colOnDevice<<<GRID_SIZE, thread_block>>>(KERNELS, devAc, devA, paddedH, paddedW, L, M, K_ , C);
+    	    gettimeofday(&t4, NULL);
+        LOG("  [!] FINISHED CALCULATING im2col ON DEVICE %.16fms\n",(t4.tv_usec-t3.tv_usec)/1000.0+(t4.tv_sec-t3.tv_sec)*1000.0);    
+        cudaMemcpy(retAc, devAc, sizeAc, cudaMemcpyDeviceToHost);
 
 
-//GEMM
-//float* array1, unsigned int rows1, unsigned int cols1, float* array2, unsigned int rows2, unsigned int cols2
-struct timeval flattens, flattene;
+    //GEMM
+    
+    struct timeval flattens, flattene;
     gettimeofday(&flattens, NULL);
-float* kernelMatrix=flatten_kernel(matFlatten,K, maxDilation, C_out);
-gettimeofday(&flattene, NULL);
- LOG("  [!] FINISHED CALCULATING Flatten ON DEVICE %.16fms\n",(flattene.tv_usec-flattens.tv_usec)/1000.0+(flattene.tv_sec-flattens.tv_sec)*1000.0);
-//printf("\n\n");
-//printf("KERNEL SIZE %d\n", countKc);
-/*for(int i=0; i<countKc;i++) {
-	printf("%f  ",kernelMatrix[i]);
-	if((i+1)%(K_*K_*C)==0)
-		printf("\n\n");
-
-}*/
-//printf("\n\n");
-
-//TODO: CHECK COUNTLR
-//float *res_gemm=matrix_mult(kernelMatrix, C_out, countF_, retAc, K_*K_*C, countLR);
-float *res_gemm = gemm(kernelMatrix, retAc, C_out, countF_, K_ *K_ *C, countLR);
+    float* kernelMatrix=flatten_kernel(matFlatten,K, maxDilation, C_out);
+    gettimeofday(&flattene, NULL);
+     LOG("  [!] FINISHED CALCULATING Flatten ON DEVICE %.16fms\n",(flattene.tv_usec-flattens.tv_usec)/1000.0+(flattene.tv_sec-flattens.tv_sec)*1000.0);
+    float *res_gemm = gemm(kernelMatrix, retAc, C_out, countF_, K_ *K_ *C, countLR);
     gettimeofday(&t4, NULL);
     LOG("  [!] FINISHED CALCULATING CoConv ON DEVICE %.16fms\n",(t4.tv_usec-t3.tv_usec)/1000.0+(t4.tv_sec-t3.tv_sec)*1000.0);
-//for(int i=0; i<C_out*countLR;i++) {
-  //  printf("%.3f ", res_gemm[i]);
-//}
-//printf("\n\n");
-ifstream output;
-output.open("op");
-float mse=0.0;
-gettimeofday(&end, NULL);
- LOG("  [!] FINISHED CALCULATING ON DEVICE %.16fms\n",(end.tv_usec-start.tv_usec)/1000.0+(end.tv_sec-start.tv_sec)*1000.0);
-char * fileN = (char*) malloc(13 * sizeof(char));
-    sprintf(fileN, "out.txt");
-    FILE * fp;
-    fp = fopen(fileN,"w");
-for(int c=0; c<C_out; c++){
-int spaces=0;
-int count=0;
-for (int i = 0; i < countLR; i++) {
-spaces++;
-int idx=i*C_out  + (c);
 
-float o =0.0;
-        output >> o;
-//        printf("gemm : %f, pytorch: %f, diff: %f \n", res_gemm[idx], o, o-res_gemm[idx]);
-        mse += (round6(o)-res_gemm[idx])*(round6(o)-res_gemm[idx]);
-        //printf("%f ",res_gemm[idx]);
-	fprintf(fp, "%f\n", res_gemm[idx]);
-  //      if((spaces)%L == 0)
-    //     	printf("\n");
+    //CPU
+
+    struct timeval cpu_start, cpu_end;
+    gettimeofday(&cpu_start, NULL);
+    retCpu = (float *)malloc(sizeAc);
+    im2colOnHost(KERNELS, retCpu, matInput, paddedH, paddedW, L, M, K_ , C);
+    float *res_gemm_cpu = matrix_mult(kernelMatrix, C_out, countF_, retAc, K_*K_*C, countLR);
+    gettimeofday(&cpu_end, NULL);
+    LOG("  [!] FINISHED CALCULATING CoConv ON CPU %.16fms\n",(cpu_end.tv_usec-cpu_start.tv_usec)/1000.0+(cpu_end.tv_sec-cpu_start.tv_sec)*1000.0);
+
+
+    ifstream output;
+    output.open("op");
+    float mse=0.0;
+    gettimeofday(&end, NULL);
+     LOG("  [!] FINISHED CALCULATING ON DEVICE %.16fms\n",(end.tv_usec-start.tv_usec)/1000.0+(end.tv_sec-start.tv_sec)*1000.0);
+    char * fileN = (char*) malloc(13 * sizeof(char));
+        sprintf(fileN, "out.txt");
+        FILE * fp;
+        fp = fopen(fileN,"w");
+    for(int c=0; c<C_out; c++){
+    int spaces=0;
+    int count=0;
+    for (int i = 0; i < countLR; i++) {
+    spaces++;
+    int idx=i*C_out  + (c);
+
+    float o =0.0;
+            output >> o;
+            mse += (round6(o)-res_gemm[idx])*(round6(o)-res_gemm[idx]);
+    	fprintf(fp, "%f\n", res_gemm[idx]);
+        }
     }
-//printf("\n");
-}
- fclose(fp);
-mse/=countLR*C_out;
-printf("\n MSE: %f", mse);
-    // CLEAN UP
-    cudaFree(devA);
-    cudaFree(devAc);
-    
-    //free(matA);
-    free(matInput);
-    free(matFlatten);
-    free(retAc);
-    free(res_gemm);
-}
+     fclose(fp);
+    mse/=countLR*C_out;
+    printf("\n MSE: %f", mse);
+        // CLEAN UP
+        cudaFree(devA);
+        cudaFree(devAc);
+        
+        //free(matA);
+        free(matInput);
+        free(matFlatten);
+        free(retAc);
+        free(res_gemm);
+    }
 
 int main(int argc, char * argv[])
 {

@@ -350,9 +350,9 @@ void program(unsigned int blockSize, unsigned int gridSize = 0)
     float *matA = (float *)malloc(sizeA);
     for (int i = 0; i < countA; i++) {
         matA[i] =(float)(i+1);
-    printf("%.1f ",matA[i]);
-    if((i+1)%4==0){
-    printf("\n");}
+	printf("%.1f ",matA[i]);
+	if((i+1)%4==0){
+	printf("\n");}
     }
     LOG("  [!] FINISHED GENERATING INPUT\n");
 
@@ -384,16 +384,16 @@ for (int i = 0; i < countAc; i++) {
         gridSize = (KERNELS_NUM + blockSize - 1) / blockSize;
     
     // Run im2col computation on device and copy results
-    struct timeval t3, t4;
+ 	struct timeval t3, t4;
 gettimeofday(&t3, NULL);
     im2colOnDevice<<<gridSize, blockSize>>>(KERNELS_NUM, devAc, devA, radiusF, countF, L, M, K, C);
 gettimeofday(&t4, NULL);
     LOG("  [!] FINISHED CALCULATING im2col ON DEVICE %.16fms\n",(t4.tv_usec-t3.tv_usec)/1000.0+(t4.tv_sec-t3.tv_sec)*1000.0);
     
     cudaMemcpy(retAc, devAc, sizeAc, cudaMemcpyDeviceToHost);
-    for (int i = 0; i < countAc; i++) {
+	for (int i = 0; i < countAc; i++) {
         printf("%.1f ",retAc[i]);
-    if((i+1)%9==0)
+	if((i+1)%9==0)
 {printf("\n");}
     }
 printf("\n");
