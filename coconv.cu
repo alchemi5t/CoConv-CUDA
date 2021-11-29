@@ -283,33 +283,16 @@ float* flatten_kernel(float * weights, int k, int d, int c_rows) {
 
 
 __global__ void flattenOnDevice(float * weights, float * canvas, int dilation, int c_rows, int c_cols, int d, int k_id, int k, int C, int kernel_id, int cur_kernel_size, int pow_c){
-	
-	int weight_id = blockIdx.x * blockDim.x + threadIdx.x;
-	weight_id = weight_id % (k*k*C);
-	int itr=((weight_id % k) * dilation) + (weight_id/k)*pow_c*dilation + (weight_id % k) + (weight_id/k)*k;
-	itr +=  kernel_id * c_cols * C  + (dilation - 1) * (c_rows / 4) * c_cols * C +  ((weight_id + 1) / (k * k)) * c_cols + (d - dilation) * pow_c + (d - dilation);
-	canvas[itr] = weights[k_id * k * k * C + weight_id];
-	/*if ((weight_id + 1) % (k * k) == 0) {
-		itr = kernel_id * c_cols * C  + (dilation - 1) * (c_rows / 4) * c_cols * C +  ((weight_id + 1) / (k * k)) * c_cols + (d - dilation) * pow(c_cols, 0.5) + (d - dilation);
 
-	}
-	elif (((k_id * k * k * C + weight_id) + 1) % (k) == 0) {
-		itr += (dilation - 1) * (pow(c_cols, 0.5)) + (pow(c_cols, 0.5) - (cur_kernel_size  ));
-		// for (int last_col_pads = 0; last_col_pads < (dilation - 1) * (pow(c_cols, 0.5)) + (pow(c_cols, 0.5) - (cur_kernel_size  )); last_col_pads++ ) {
-
-		// 	itr++;
-
-		// }
-	}
-	else {
-		itr = (dilation - 1);
-		// for (int inner_cols = 0; inner_cols < (dilation - 1); inner_cols++ ) {
-		// 	itr++;
-		// }
-
-
-	}*/
-
+        int weight_id = blockIdx.x * blockDim.x + threadIdx.x;
+        if(weight_id/(k*k*C)<1){
+        weight_id = weight_id % (k*k*C);
+        int itr=  ((weight_id % k) * dilation) + (weight_id/k)*pow_c*dilation + (weight_id % k) + (weight_id/k)*k;
+        itr +=  ((weight_id) /(k * k)) * (kernel_id * c_cols * C  + (dilation - 1) * (c_rows / 4) * c_cols * C +  ((weight_id + 1) / (k * k)) * c_cols + (d - dilation) * pow_c + (d - dilation));
+        itr += k_id * c_cols * C + (d - dilation) * pow_c + (d - dilation);
+        //itr = 0;
+        canvas[itr] = weights[k_id * k * k * C + weight_id];
+        }
 
 }
 
