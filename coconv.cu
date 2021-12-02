@@ -11,7 +11,6 @@
 #include <vector>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
-#include <cublas_v2.h>
 #include <unistd.h>
 #include <string.h>
 
@@ -131,7 +130,8 @@ float* gemm(float *array_A, float *array_B_gpu, int M_Arows, int M_Acols, int M_
 
 //GPU MEMORY ALLOCATION
 	//float *array_B_gpu;
-	float *array_A_gpu, *array_C_gpu, *array_D_gpu;   //gpu arrays declared
+	float *array_A_gpu, *array_C_gpu;
+	//float  *array_D_gpu;
 
 	HANDLE_ERROR(cudaMalloc(&array_A_gpu, M_Arows * M_Acols * sizeof(float))); //allocate space to store arrayA
 
@@ -165,7 +165,7 @@ float* gemm(float *array_A, float *array_B_gpu, int M_Arows, int M_Acols, int M_
 
 	cudaEventSynchronize(stop1);
 
-	float milliseconds1 = 0, milliseconds2 = 0;//storing the execution time in milliseconds
+	float milliseconds1 = 0;//storing the execution time in milliseconds
 
 	cudaEventElapsedTime(&milliseconds1, start1, stop1);//get the time in milliseconds
 	LOG("  [!] Time taken by GPU GEMM %f ms\n", milliseconds1); //printing time taken by GPU
@@ -492,7 +492,7 @@ void program(unsigned int blockSize = 0, unsigned int gridSize = 0)
 	unsigned int GRID_SIZE = (KERNELS + thread_block - 1) / thread_block;
 	LOG("  [!]GRID SIZE=%d\tBLOCK SIZE=%f\n", GRID_SIZE, thread_block);
 	//TIME 
-	struct timeval start, end,im2cols,im2cole,flattens,flattene,cpu_start, cpu_end, im2cols_cpu, im2cole_cpu, gemms_cpu, memcopys;
+	struct timeval start, end,im2cols,im2cole,flattens,flattene,cpu_start, cpu_end, im2cols_cpu, im2cole_cpu, gemms_cpu;
 	
 	// Alloc memory and copy data to device	
 	float *devA, *devAc, *retAc, *retCpu;

@@ -33,6 +33,12 @@ os.system("python3 pytorch.py 64 64 32 16")
 os.system("rm -f in*");
 os.system("rm -f weights*");
 
+os.system("python3 datagen.py 64 64 64 32")
+os.system("./coconv 64 64 64 32")
+os.system("python3 pytorch.py 64 64 64 32")
+os.system("rm -f in*");
+os.system("rm -f weights*");
+
 os.system("python3 datagen.py 64 64 100 100")
 os.system("./coconv 64 64 100 100")
 os.system("python3 pytorch.py 64 64 100 100")
@@ -42,6 +48,18 @@ os.system("rm -f weights*");
 os.system("python3 datagen.py 100 100 100 100")
 os.system("./coconv 100 100 100 100")
 os.system("python3 pytorch.py 100 100 100 100")
+os.system("rm -f in*");
+os.system("rm -f weights*");
+
+os.system("python3 datagen.py 128 128 100 100")
+os.system("./coconv 128 128 100 100")
+os.system("python3 pytorch.py 128 128 100 100")
+os.system("rm -f in*");
+os.system("rm -f weights*");
+
+os.system("python3 datagen.py 256 256 100 100")
+os.system("./coconv 256 256 100 100")
+os.system("python3 pytorch.py 256 256 100 100")
 os.system("rm -f in*");
 os.system("rm -f weights*");
 
