@@ -1,4 +1,5 @@
 import os
+os.system("nvcc -o coconv coconv.cu");
 
 os.system("rm -f speedup");
 os.system("touch speedup");
