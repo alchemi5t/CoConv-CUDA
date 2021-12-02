@@ -11,7 +11,7 @@ torch.manual_seed(42069)
 inp_h = int(sys.argv[1])
 inp_w = int(sys.argv[2])
 inp_c = int(sys.argv[3])
-c_out = int(sys.argv[1])
+c_out = int(sys.argv[4])
 inp = torch.rand((1,inp_c,inp_h,inp_w))
 f = open("in_{}_{}_{}_{}".format(inp_h,inp_w,inp_c,c_out),"w")
 
@@ -28,10 +28,10 @@ f.close()
 
 f = open("weights_{}_{}_{}_{}".format(inp_h,inp_w,inp_c,c_out),"w")
 def coconv(maxd):
+        out_channels=c_out//4
         convs = []
         for i in range(maxd):
-                convs.append(nn.Conv2d(inp_c,c_out,3,bias=False,dilation=i+1,padding = i+1))
-
+                convs.append(nn.Conv2d(inp_c,out_channels,3,bias=False,dilation=i+1,padding = i+1))
 
         return convs
 
@@ -58,3 +58,4 @@ for c1 in convs:
                         for k in j:
                                 for l in k:
                                         f.write(str(round(float(l),6)) + "\n")
+
